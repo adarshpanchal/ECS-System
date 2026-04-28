@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ECS - Empty Classroom & Space Utilisation System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              panel: '#151a23',
+              panel2: '#1b2230',
+              accent: '#22c55e',
+              accent2: '#ef4444'
+            }
+          }
+        }
+      };
+    </script>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  </head>
+  <body class="bg-slate-950 text-slate-100 min-h-screen">
+    <div id="root"></div>
+
+    <script type="text/babel">
+      const { useEffect, useMemo, useState, useRef } = React;
+      const API = '/api';
+      const slots = ['08:00-09:00', '09:00-10:00', '10:00-11:00', '11:00-12:00'];
+      const issues = ['Projector', 'AC', 'Furniture', 'Locked Room'];
+
+      const today = new Date().toISOString().slice(0, 10);
+
+      function Badge({ status }) {
+        const ok = status === 'Available' || status === 'Resolved' || status === 'active';
+        return <span className={`px-2 py-1 rounded text-xs font-semibold ${ok ? 'bg-emerald-600/30 text-emerald-300' : 'bg-rose-600/30 text-rose-300'}`}>{status}</span>;
+      }
+
+      function App() {
+        const [token, setToken] = useState(localStorage.getItem('ecs_token') || '');
+        const [user, setUser] = useState(JSON.parse(localStorage.getItem('ecs_user') || 'null'));
+        const [authMode, setAuthMode] = useState('login');
+        const [authForm, setAuthForm] = useState({ name: '', email: '', password: '', role: 'student' });
+        const [msg, setMsg] = useState('');
+        const [tab, setTab] = useState('dashboard');
+
+        const [filters, setFilters] = useState({ date: today, time_slot: slots[0], room_number: '', capacity: '' });
+        const [classrooms, setClassrooms] = useState([]);
+        const [timetable, setTimetable] = useState([]);
+        const [bookings, setBookings] = useState([]);
+        const [complaints, setComplaints] = useState([]);
+        const [users, setUsers] = useState([]);
+        const [analytics, setAnalytics] = useState(null);
+        const [chatQ, setChatQ] = useState('');
+        const [chatA, setChatA] = useState('');
+        const [recommendation, setRecommendation] = useState(null);
+
+        const [bookingForm, setBookingForm] = useState({ room_id: 1, date: today, time_slot: slots[0], purpose: 'Extra class' });
+        const [complaintForm, setComplaintForm] = useState({ room_id: 1, issue_type: 'Projector', description: '' });
+        const [roomForm, setRoomForm] = useState({ room_number: '', capacity: 30, projector: 'No', facilities: '' });
+        const [ttForm, setTtForm] = useState({ room_id: 1, day: 'Monday', time_slot: slots[0], subject: 'DB' });
+        const [recommendForm, setRecommendForm] = useState({ date: today, time_slot: slots[0], min_capacity: 30, need_projector: false });
+
+        const roomChartRef = useRef(null);
+        const slotChartRef = useRef(null);
+        const roomChartInst = useRef(null);
+        const slotChartInst = useRef(null);
+
+        const authHeaders = useMemo(() => ({
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        }), [token]);
+
+        async function api(path, opts = {}) {
+          const res = await fetch(`${API}${path}`, opts);
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.message || 'Request failed');
+          return data;
+        }
+
+        async function fetchAll() {
+          if (!token) return;
+          try {
+            const [cr, tt, bk, cp] = await Promise.all([
+              api(`/classrooms?date=${filters.date}&time_slot=${filters.time_slot}&room_number=${encodeURIComponent(filters.room_number)}&capacity=${filters.capacity || ''}`, { headers: authHeaders }),
+              api('/timetable', { headers: authHeaders }),
+              api('/bookings', { headers: authHeaders }),
+              api('/complaints', { headers: authHeaders })
+            ]);
+            setClassrooms(cr);
+            setTimetable(tt);
+            setBookings(bk);
+            setComplaints(cp);
+            if (user?.role === 'admin') {
+              const [uu, an] = await Promise.all([
+                api('/admin/users', { headers: authHeaders }),
+                api('/analytics', { headers: authHeaders })
+              ]);
+              setUsers(uu);
+              setAnalytics(an);
+            }
+          } catch (e) {
+            setMsg(e.message);
+          }
+        }
+
+        useEffect(() => { fetchAll(); }, [token, filters.date, filters.time_slot]);
+
+        useEffect(() => {
+          if (!analytics || !roomChartRef.current || !slotChartRef.current) return;
+
+          if (roomChartInst.current) roomChartInst.current.destroy();
+          if (slotChartInst.current) slotChartInst.current.destroy();
+
+          roomChartInst.current = new Chart(roomChartRef.current, {
+            type: 'bar',
+            data: {
+              labels: Object.keys(analytics.usageByRoom),
+              datasets: [{ label: 'Room Usage', data: Object.values(analytics.usageByRoom), backgroundColor: '#22c55e' }]
+            },
+            options: { plugins: { legend: { labels: { color: '#fff' } } }, scales: { x: { ticks: { color: '#fff' } }, y: { ticks: { color: '#fff' } } } }
+          });
+
+          slotChartInst.current = new Chart(slotChartRef.current, {
+            type: 'doughnut',
+            data: {
+              labels: Object.keys(analytics.usageBySlot),
+              datasets: [{ data: Object.values(analytics.usageBySlot), backgroundColor: ['#22c55e', '#3b82f6', '#eab308', '#ef4444'] }]
+            },
+            options: { plugins: { legend: { labels: { color: '#fff' } } } }
+          });
+        }, [analytics]);
+
+        async function handleAuth(e) {
+          e.preventDefault();
+          setMsg('');
+          try {
+            const endpoint = authMode === 'login' ? '/auth/login' : '/auth/register';
+            const payload = authMode === 'login' ? { email: authForm.email, password: authForm.password } : authForm;
+            const data = await api(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+            localStorage.setItem('ecs_token', data.token);
+            localStorage.setItem('ecs_user', JSON.stringify(data.user));
+            setToken(data.token);
+            setUser(data.user);
+            setMsg('Authenticated successfully');
+          } catch (e2) {
+            setMsg(e2.message);
+          }
+        }
+
+        function logout() {
+          localStorage.removeItem('ecs_token');
+          localStorage.removeItem('ecs_user');
+          setToken('');
+          setUser(null);
+          setClassrooms([]);
+          setBookings([]);
+          setComplaints([]);
+          setUsers([]);
+          setAnalytics(null);
+        }
+
+        async function createBooking(e) {
+          e.preventDefault();
+          try {
+            await api('/bookings', { method: 'POST', headers: authHeaders, body: JSON.stringify({ ...bookingForm, room_id: Number(bookingForm.room_id) }) });
+            setMsg('Booking created');
+            fetchAll();
+          } catch (e2) {
+            setMsg(e2.message);
+          }
+        }
+
+        async function cancelBooking(id) {
+          try {
+            await api(`/bookings/${id}/cancel`, { method: 'PATCH', headers: authHeaders });
+            setMsg('Booking cancelled');
+            fetchAll();
+          } catch (e2) {
+            setMsg(e2.message);
+          }
+        }
+
+        async function submitComplaint(e) {
+          e.preventDefault();
+          try {
+            await api('/complaints', { method: 'POST', headers: authHeaders, body: JSON.stringify({ ...complaintForm, room_id: Number(complaintForm.room_id) }) });
+            setComplaintForm({ room_id: 1, issue_type: 'Projector', description: '' });
+            setMsg('Complaint submitted');
+            fetchAll();
+          } catch (e2) {
+            setMsg(e2.message);
+          }
+        }
+
+        async function updateComplaint(id, status) {
+          try {
+            await api(`/complaints/${id}/status`, { method: 'PATCH', headers: authHeaders, body: JSON.stringify({ status }) });
+            setMsg('Complaint updated');
+            fetchAll();
+          } catch (e2) {
+            setMsg(e2.message);
+          }
+        }
+
+        async function addClassroom(e) {
+          e.preventDefault();
+          try {
+            await api('/admin/classrooms', {
+              method: 'POST',
+              headers: authHeaders,
+              body: JSON.stringify({
+                room_number: roomForm.room_number,
+                capacity: Number(roomForm.capacity),
+                projector: roomForm.projector,
+                facilities: roomForm.facilities ? roomForm.facilities.split(',').map((x) => x.trim()) : []
+              })
+            });
+            setMsg('Classroom added');
+            setRoomForm({ room_number: '', capacity: 30, projector: 'No', facilities: '' });
+            fetchAll();
+          } catch (e2) {
+            setMsg(e2.message);
+          }
+        }
+
+        async function addTimetable(e) {
+          e.preventDefault();
+          try {
+            await api('/admin/timetable', { method: 'POST', headers: authHeaders, body: JSON.stringify({ ...ttForm, room_id: Number(ttForm.room_id) }) });
+            setMsg('Timetable row added');
+            fetchAll();
+          } catch (e2) {
+            setMsg(e2.message);
+          }
+        }
+
+        async function askBot(e) {
+          e.preventDefault();
+          try {
+            const data = await api('/chatbot', { method: 'POST', headers: authHeaders, body: JSON.stringify({ message: chatQ }) });
+            setChatA(data.reply);
+          } catch (e2) {
+            setMsg(e2.message);
+          }
+        }
+
+        async function getRecommendation(e) {
+          e.preventDefault();
+          try {
+            const data = await api('/recommend-room', {
+              method: 'POST',
+              headers: authHeaders,
+              body: JSON.stringify({ ...recommendForm, min_capacity: Number(recommendForm.min_capacity) })
+            });
+            setRecommendation(data);
+          } catch (e2) {
+            setMsg(e2.message);
+          }
+        }
+
+        if (!token || !user) {
+          return (
+            <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950">
+              <form onSubmit={handleAuth} className="w-full max-w-md bg-panel border border-slate-700 rounded-xl p-6 space-y-3">
+                <h1 className="text-xl font-bold">ECS Login</h1>
+                <p className="text-sm text-slate-300">Empty Classroom & Space Utilisation System</p>
+                {authMode === 'register' && <input className="w-full p-2 rounded bg-panel2" placeholder="Name" value={authForm.name} onChange={(e) => setAuthForm({ ...authForm, name: e.target.value })} />}
+                <input className="w-full p-2 rounded bg-panel2" placeholder="Email" value={authForm.email} onChange={(e) => setAuthForm({ ...authForm, email: e.target.value })} />
+                <input type="password" className="w-full p-2 rounded bg-panel2" placeholder="Password" value={authForm.password} onChange={(e) => setAuthForm({ ...authForm, password: e.target.value })} />
+                {authMode === 'register' && (
+                  <select className="w-full p-2 rounded bg-panel2" value={authForm.role} onChange={(e) => setAuthForm({ ...authForm, role: e.target.value })}>
+                    <option value="student">Student</option>
+                    <option value="faculty">Faculty</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                )}
+                <button className="w-full p-2 rounded bg-emerald-600 font-semibold">{authMode === 'login' ? 'Login' : 'Register'}</button>
+                <button type="button" onClick={() => setAuthMode(authMode === 'login' ? 'register' : 'login')} className="w-full p-2 rounded bg-slate-700">
+                  Switch to {authMode === 'login' ? 'Register' : 'Login'}
+                </button>
+                <p className="text-xs text-slate-400">Demo users: admin@ecs.edu / faculty123 / student123</p>
+                {msg && <p className="text-sm text-amber-300">{msg}</p>}
+              </form>
+            </div>
+          );
+        }
+
+        const tabs = [
+          { id: 'dashboard', label: 'Dashboard', allow: true },
+          { id: 'timetable', label: 'Timetable', allow: true },
+          { id: 'bookings', label: 'Bookings', allow: user.role === 'faculty' || user.role === 'admin' },
+          { id: 'complaints', label: 'Complaints', allow: true },
+          { id: 'admin', label: 'Admin', allow: user.role === 'admin' },
+          { id: 'analytics', label: 'Analytics', allow: user.role === 'admin' },
+          { id: 'recommend', label: 'Recommend', allow: user.role === 'faculty' },
+          { id: 'chatbot', label: 'Chatbot', allow: true }
+        ].filter((t) => t.allow);
+
+        return (
+          <div className="min-h-screen grid grid-cols-1 md:grid-cols-[220px_1fr] bg-slate-950">
+            <aside className="bg-panel border-r border-slate-800 p-4">
+              <h2 className="font-bold text-lg">ECS</h2>
+              <p className="text-xs text-slate-400 mt-1">{user.name} ({user.role})</p>
+              <nav className="mt-4 space-y-2">
+                {tabs.map((t) => (
+                  <button key={t.id} onClick={() => setTab(t.id)} className={`w-full text-left px-3 py-2 rounded ${tab === t.id ? 'bg-emerald-700' : 'bg-panel2'}`}>{t.label}</button>
+                ))}
+              </nav>
+              <button onClick={logout} className="mt-6 w-full bg-rose-700 px-3 py-2 rounded">Logout</button>
+            </aside>
+
+            <main className="p-4 md:p-6 space-y-4">
+              {msg && <div className="bg-amber-500/20 border border-amber-500/30 p-2 rounded text-sm">{msg}</div>}
+
+              {tab === 'dashboard' && (
+                <section className="space-y-4">
+                  <h3 className="text-xl font-semibold">Classroom Availability</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3 bg-panel p-3 rounded">
+                    <input type="date" className="p-2 rounded bg-panel2" value={filters.date} onChange={(e) => setFilters({ ...filters, date: e.target.value })} />
+                    <select className="p-2 rounded bg-panel2" value={filters.time_slot} onChange={(e) => setFilters({ ...filters, time_slot: e.target.value })}>{slots.map((s) => <option key={s}>{s}</option>)}</select>
+                    <input className="p-2 rounded bg-panel2" placeholder="Room number" value={filters.room_number} onChange={(e) => setFilters({ ...filters, room_number: e.target.value })} />
+                    <input className="p-2 rounded bg-panel2" placeholder="Min capacity" value={filters.capacity} onChange={(e) => setFilters({ ...filters, capacity: e.target.value })} />
+                  </div>
+                  <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                    {classrooms.map((r) => (
+                      <div key={r.room_id} className="bg-panel p-4 rounded border border-slate-800">
+                        <div className="flex items-center justify-between"><h4 className="font-semibold">{r.room_number}</h4><Badge status={r.status || 'Unknown'} /></div>
+                        <p className="text-sm text-slate-300 mt-2">Capacity: {r.capacity}</p>
+                        <p className="text-sm text-slate-300">Projector: {r.projector}</p>
+                        <p className="text-xs text-slate-400 mt-2">{r.reason || '-'}</p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {tab === 'timetable' && (
+                <section className="space-y-4">
+                  <h3 className="text-xl font-semibold">Weekly Timetable</h3>
+                  <div className="overflow-auto bg-panel rounded border border-slate-800">
+                    <table className="w-full text-sm">
+                      <thead className="bg-panel2"><tr><th className="p-2 text-left">Day</th><th className="p-2 text-left">Slot</th><th className="p-2 text-left">Room</th><th className="p-2 text-left">Subject</th></tr></thead>
+                      <tbody>{timetable.map((t) => <tr key={t._id} className="border-t border-slate-800"><td className="p-2">{t.day}</td><td className="p-2">{t.time_slot}</td><td className="p-2">{t.room_id}</td><td className="p-2">{t.subject}</td></tr>)}</tbody>
+                    </table>
+                  </div>
+                </section>
+              )}
+
+              {tab === 'bookings' && (
+                <section className="space-y-4">
+                  <h3 className="text-xl font-semibold">Bookings</h3>
+                  {user.role === 'faculty' && (
+                    <form onSubmit={createBooking} className="grid grid-cols-1 md:grid-cols-5 gap-2 bg-panel p-3 rounded">
+                      <input className="p-2 rounded bg-panel2" type="number" placeholder="Room ID" value={bookingForm.room_id} onChange={(e) => setBookingForm({ ...bookingForm, room_id: e.target.value })} />
+                      <input className="p-2 rounded bg-panel2" type="date" value={bookingForm.date} onChange={(e) => setBookingForm({ ...bookingForm, date: e.target.value })} />
+                      <select className="p-2 rounded bg-panel2" value={bookingForm.time_slot} onChange={(e) => setBookingForm({ ...bookingForm, time_slot: e.target.value })}>{slots.map((s) => <option key={s}>{s}</option>)}</select>
+                      <input className="p-2 rounded bg-panel2" placeholder="Purpose" value={bookingForm.purpose} onChange={(e) => setBookingForm({ ...bookingForm, purpose: e.target.value })} />
+                      <button className="p-2 rounded bg-emerald-700">Book</button>
+                    </form>
+                  )}
+                  <div className="space-y-2">
+                    {bookings.map((b) => (
+                      <div key={b._id} className="bg-panel p-3 rounded border border-slate-800 flex items-center justify-between gap-2">
+                        <div className="text-sm">Room {b.room_id} | {b.date} | {b.time_slot} | {b.purpose}</div>
+                        <div className="flex items-center gap-2"><Badge status={b.status} />{user.role === 'faculty' && b.status === 'active' && <button onClick={() => cancelBooking(b._id)} className="px-2 py-1 bg-rose-700 rounded text-xs">Cancel</button>}</div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {tab === 'complaints' && (
+                <section className="space-y-4">
+                  <h3 className="text-xl font-semibold">Complaints</h3>
+                  {(user.role === 'student' || user.role === 'faculty') && (
+                    <form onSubmit={submitComplaint} className="grid grid-cols-1 md:grid-cols-4 gap-2 bg-panel p-3 rounded">
+                      <input type="number" className="p-2 rounded bg-panel2" value={complaintForm.room_id} onChange={(e) => setComplaintForm({ ...complaintForm, room_id: e.target.value })} placeholder="Room ID" />
+                      <select className="p-2 rounded bg-panel2" value={complaintForm.issue_type} onChange={(e) => setComplaintForm({ ...complaintForm, issue_type: e.target.value })}>{issues.map((i) => <option key={i}>{i}</option>)}</select>
+                      <input className="p-2 rounded bg-panel2" value={complaintForm.description} onChange={(e) => setComplaintForm({ ...complaintForm, description: e.target.value })} placeholder="Description" />
+                      <button className="p-2 rounded bg-emerald-700">Submit</button>
+                    </form>
+                  )}
+                  <div className="space-y-2">
+                    {complaints.map((c) => (
+                      <div key={c._id} className="bg-panel p-3 rounded border border-slate-800">
+                        <div className="flex justify-between items-center"><p className="text-sm">Room {c.room_id} | {c.issue_type} | {c.description}</p><Badge status={c.status} /></div>
+                        {user.role === 'admin' && (
+                          <div className="mt-2 flex gap-2">
+                            {['Pending', 'In Progress', 'Resolved'].map((s) => <button key={s} onClick={() => updateComplaint(c._id, s)} className="text-xs px-2 py-1 rounded bg-slate-700">{s}</button>)}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {tab === 'admin' && user.role === 'admin' && (
+                <section className="space-y-4">
+                  <h3 className="text-xl font-semibold">Admin Dashboard</h3>
+                  <div className="bg-panel p-3 rounded">
+                    <h4 className="font-semibold mb-2">Users</h4>
+                    <div className="text-sm space-y-1">{users.map((u) => <div key={u.uid}>#{u.uid} {u.name} ({u.role}) - {u.email}</div>)}</div>
+                  </div>
+                  <form onSubmit={addClassroom} className="grid grid-cols-1 md:grid-cols-5 gap-2 bg-panel p-3 rounded">
+                    <input className="p-2 rounded bg-panel2" placeholder="Room Number" value={roomForm.room_number} onChange={(e) => setRoomForm({ ...roomForm, room_number: e.target.value })} />
+                    <input type="number" className="p-2 rounded bg-panel2" placeholder="Capacity" value={roomForm.capacity} onChange={(e) => setRoomForm({ ...roomForm, capacity: e.target.value })} />
+                    <select className="p-2 rounded bg-panel2" value={roomForm.projector} onChange={(e) => setRoomForm({ ...roomForm, projector: e.target.value })}><option>Yes</option><option>No</option></select>
+                    <input className="p-2 rounded bg-panel2" placeholder="Facilities (comma)" value={roomForm.facilities} onChange={(e) => setRoomForm({ ...roomForm, facilities: e.target.value })} />
+                    <button className="p-2 rounded bg-emerald-700">Add Classroom</button>
+                  </form>
+                  <form onSubmit={addTimetable} className="grid grid-cols-1 md:grid-cols-5 gap-2 bg-panel p-3 rounded">
+                    <input type="number" className="p-2 rounded bg-panel2" value={ttForm.room_id} onChange={(e) => setTtForm({ ...ttForm, room_id: e.target.value })} placeholder="Room ID" />
+                    <select className="p-2 rounded bg-panel2" value={ttForm.day} onChange={(e) => setTtForm({ ...ttForm, day: e.target.value })}>{['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].map((d) => <option key={d}>{d}</option>)}</select>
+                    <select className="p-2 rounded bg-panel2" value={ttForm.time_slot} onChange={(e) => setTtForm({ ...ttForm, time_slot: e.target.value })}>{slots.map((s) => <option key={s}>{s}</option>)}</select>
+                    <select className="p-2 rounded bg-panel2" value={ttForm.subject} onChange={(e) => setTtForm({ ...ttForm, subject: e.target.value })}>{['DB', 'OS', 'CN', 'AI', 'SE', 'ML'].map((s) => <option key={s}>{s}</option>)}</select>
+                    <button className="p-2 rounded bg-emerald-700">Add Timetable Row</button>
+                  </form>
+                </section>
+              )}
+
+              {tab === 'analytics' && user.role === 'admin' && analytics && (
+                <section className="space-y-4">
+                  <h3 className="text-xl font-semibold">Usage Analytics</h3>
+                  <div className="grid lg:grid-cols-2 gap-4">
+                    <div className="bg-panel p-3 rounded border border-slate-800"><canvas ref={roomChartRef}></canvas></div>
+                    <div className="bg-panel p-3 rounded border border-slate-800"><canvas ref={slotChartRef}></canvas></div>
+                  </div>
+                  <div className="bg-panel p-3 rounded text-sm">
+                    <p>Most used: {analytics.mostUsedClassrooms.map((x) => `${x[0]}(${x[1]})`).join(', ')}</p>
+                    <p>Least used: {analytics.leastUsedClassrooms.map((x) => `${x[0]}(${x[1]})`).join(', ')}</p>
+                    <p>Peak slot: {analytics.peakUsageTime ? `${analytics.peakUsageTime[0]} (${analytics.peakUsageTime[1]})` : '-'}</p>
+                  </div>
+                </section>
+              )}
+
+              {tab === 'recommend' && user.role === 'faculty' && (
+                <section className="space-y-4">
+                  <h3 className="text-xl font-semibold">Room Recommendation</h3>
+                  <form onSubmit={getRecommendation} className="grid grid-cols-1 md:grid-cols-5 gap-2 bg-panel p-3 rounded">
+                    <input type="date" className="p-2 rounded bg-panel2" value={recommendForm.date} onChange={(e) => setRecommendForm({ ...recommendForm, date: e.target.value })} />
+                    <select className="p-2 rounded bg-panel2" value={recommendForm.time_slot} onChange={(e) => setRecommendForm({ ...recommendForm, time_slot: e.target.value })}>{slots.map((s) => <option key={s}>{s}</option>)}</select>
+                    <input type="number" className="p-2 rounded bg-panel2" value={recommendForm.min_capacity} onChange={(e) => setRecommendForm({ ...recommendForm, min_capacity: e.target.value })} />
+                    <label className="p-2 rounded bg-panel2 flex items-center gap-2"><input type="checkbox" checked={recommendForm.need_projector} onChange={(e) => setRecommendForm({ ...recommendForm, need_projector: e.target.checked })} />Need projector</label>
+                    <button className="p-2 rounded bg-emerald-700">Recommend</button>
+                  </form>
+                  {recommendation && (
+                    <div className="bg-panel p-3 rounded text-sm space-y-1">
+                      <p>Recommended: {recommendation.recommended ? `${recommendation.recommended.room_number} (cap ${recommendation.recommended.capacity})` : 'No room available'}</p>
+                      <p>Alternatives: {(recommendation.alternatives || []).map((x) => x.room_number).join(', ') || '-'}</p>
+                    </div>
+                  )}
+                </section>
+              )}
+
+              {tab === 'chatbot' && (
+                <section className="space-y-4">
+                  <h3 className="text-xl font-semibold">ECS Chatbot</h3>
+                  <form onSubmit={askBot} className="flex gap-2 bg-panel p-3 rounded">
+                    <input className="flex-1 p-2 rounded bg-panel2" placeholder="Ask about room availability / booking / complaints" value={chatQ} onChange={(e) => setChatQ(e.target.value)} />
+                    <button className="px-4 rounded bg-emerald-700">Ask</button>
+                  </form>
+                  <div className="bg-panel p-3 rounded min-h-20 text-slate-200">{chatA || 'Bot response will appear here.'}</div>
+                </section>
+              )}
+            </main>
+          </div>
+        );
+      }
+
+      ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+  </body>
+</html>

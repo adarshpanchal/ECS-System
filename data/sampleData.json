@@ -1,0 +1,45 @@
+{
+  "classrooms": [
+    { "room_id": 1, "room_number": "A101", "capacity": 40, "projector": "Yes" },
+    { "room_id": 2, "room_number": "A102", "capacity": 35, "projector": "No" },
+    { "room_id": 3, "room_number": "B201", "capacity": 50, "projector": "Yes" },
+    { "room_id": 4, "room_number": "B202", "capacity": 45, "projector": "Yes" },
+    { "room_id": 5, "room_number": "C301", "capacity": 60, "projector": "No" }
+  ],
+  "timetable": [
+    { "room_id": 1, "day": "Monday", "time_slot": "08:00-09:00", "subject": "DB" },
+    { "room_id": 2, "day": "Monday", "time_slot": "09:00-10:00", "subject": "OS" },
+    { "room_id": 3, "day": "Monday", "time_slot": "10:00-11:00", "subject": "CN" },
+    { "room_id": 4, "day": "Monday", "time_slot": "11:00-12:00", "subject": "AI" },
+    { "room_id": 1, "day": "Tuesday", "time_slot": "09:00-10:00", "subject": "SE" },
+    { "room_id": 3, "day": "Tuesday", "time_slot": "08:00-09:00", "subject": "ML" },
+    { "room_id": 5, "day": "Tuesday", "time_slot": "10:00-11:00", "subject": "DB" },
+    { "room_id": 2, "day": "Wednesday", "time_slot": "08:00-09:00", "subject": "CN" },
+    { "room_id": 4, "day": "Wednesday", "time_slot": "09:00-10:00", "subject": "OS" },
+    { "room_id": 5, "day": "Wednesday", "time_slot": "11:00-12:00", "subject": "AI" },
+    { "room_id": 1, "day": "Thursday", "time_slot": "10:00-11:00", "subject": "ML" },
+    { "room_id": 3, "day": "Thursday", "time_slot": "11:00-12:00", "subject": "SE" },
+    { "room_id": 4, "day": "Thursday", "time_slot": "08:00-09:00", "subject": "DB" },
+    { "room_id": 2, "day": "Friday", "time_slot": "10:00-11:00", "subject": "AI" },
+    { "room_id": 3, "day": "Friday", "time_slot": "09:00-10:00", "subject": "CN" },
+    { "room_id": 5, "day": "Friday", "time_slot": "08:00-09:00", "subject": "OS" }
+  ],
+  "users": [
+    { "id": 1, "name": "Admin User", "email": "admin@ecs.edu", "password": "admin123", "role": "admin" },
+    { "id": 2, "name": "Dr. Meera", "email": "meera@ecs.edu", "password": "faculty123", "role": "faculty" },
+    { "id": 3, "name": "Prof. Arun", "email": "arun@ecs.edu", "password": "faculty123", "role": "faculty" },
+    { "id": 4, "name": "Riya Sharma", "email": "riya@ecs.edu", "password": "student123", "role": "student" },
+    { "id": 5, "name": "Karan Patel", "email": "karan@ecs.edu", "password": "student123", "role": "student" },
+    { "id": 6, "name": "Nisha Verma", "email": "nisha@ecs.edu", "password": "student123", "role": "student" }
+  ],
+  "bookings": [
+    { "id": 1, "user_id": 2, "room_id": 4, "date": "2026-04-14", "time_slot": "10:00-11:00", "purpose": "Guest lecture" },
+    { "id": 2, "user_id": 3, "room_id": 2, "date": "2026-04-16", "time_slot": "11:00-12:00", "purpose": "Remedial class" },
+    { "id": 3, "user_id": 2, "room_id": 5, "date": "2026-04-17", "time_slot": "09:00-10:00", "purpose": "Workshop" }
+  ],
+  "complaints": [
+    { "id": 1, "user_id": 4, "room_id": 1, "issue_type": "Projector", "description": "Projector not turning on in A101.", "status": "Pending" },
+    { "id": 2, "user_id": 5, "room_id": 3, "issue_type": "AC", "description": "AC cooling is weak in B201.", "status": "Resolved" },
+    { "id": 3, "user_id": 6, "room_id": 5, "issue_type": "Furniture", "description": "Two broken chairs found in C301.", "status": "Pending" }
+  ]
+}
